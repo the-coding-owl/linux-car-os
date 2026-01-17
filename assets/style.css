@@ -1,0 +1,266 @@
+window {
+    background-image: url('background.png');
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-position: center;
+    background-color: #000000; /* Fallback */
+    color: #ffffff;
+}
+
+/* Die untere Navigationsleiste */
+.bottom-bar {
+    background-color: rgba(0, 0, 0, 0.5); /* Halbtransparente Leiste */
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 10px;
+}
+
+/* Der Glass-Button Effekt */
+button {
+    background: rgba(255, 255, 255, 0.05); /* Sehr dezente Füllung */
+    border: 1px solid rgba(255, 255, 255, 0.2); /* Feiner Lichtkanten-Effekt */
+    border-radius: 12px;
+    color: #ffffff;
+    font-size: 18px;
+    font-weight: 500;
+    padding: 15px;
+    margin: 5px;
+    transition: all 0.2s ease; /* Weiche Animation beim Drücken */
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
+}
+
+/* Feedback beim Drücken */
+button:active {
+    background: rgba(0, 123, 255, 0.4); /* Blaues Schimmern */
+    border-color: rgba(0, 162, 255, 0.8);
+    transform: scale(0.98); /* Kleiner Druck-Effekt */
+}
+
+/* Fokus-Rahmen entfernen (stört bei Touch) */
+button:focus {
+    outline: none;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2);
+}
+
+label {
+    font-size: 24px;
+}
+
+/* WICHTIG: Damit man das Bild sieht, müssen die Container darüber 
+   transparent sein oder einen leicht durchsichtigen Hintergrund haben */
+.main-layout {
+    background-color: rgba(0, 0, 0, 0.4); /* 40% Abdunklung für bessere Lesbarkeit */
+}
+
+stack {
+    background-color: transparent;
+}
+
+.transparent-bg {
+    background-color: transparent;
+}
+
+.btn-label {
+    font-size: 14px;
+    font-weight: bold;
+    margin-top: 2px;
+}
+
+/* Verhindert, dass das Icon den Button sprengt */
+image {
+    margin-bottom: 2px;
+}
+
+.bt-address-dimmed {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    font-family: monospace;
+}
+
+.radio-metadata {
+    font-size: 24px;
+    font-weight: bold;
+    color: #00d4ff; /* Passend zum Blau deines Hintergrunds */
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    margin: 20px;
+}
+
+flowbox {
+    padding: 10px;
+    border-spacing: 15px; /* Abstand zwischen den Kacheln */
+}
+
+/* Scrollbar im Auto oft störend, wir machen sie dezent */
+scrollbar {
+    background: transparent;
+}
+
+scrollbar slider {
+    background: rgba(255, 255, 255, 0.2);
+    min-width: 5px;
+}
+
+.radio-container {
+    margin: 20px;
+}
+
+.close-button {
+    background: #e74c3c;
+    color: white;
+    padding: 15px;
+    border-radius: 10px;
+    font-weight: bold;
+}
+
+.top-bar {
+    background: rgba(0, 0, 0, 0.7);
+    padding: 10px 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.top-clock {
+    font-size: 20px;
+    font-weight: bold;
+    color: #ffffff;
+    margin-right: 15px; /* Abstand zum Close-Button */
+}
+
+/* Der neue kleine Close-Button */
+.top-close-btn {
+    background: rgba(231, 76, 60, 0.2); /* Dezent rötlich */
+    border: 1px solid rgba(231, 76, 60, 0.5);
+    border-radius: 8px;
+    padding: 5px;
+    min-width: 35px;
+    min-height: 35px;
+}
+
+.top-close-btn:active {
+    background: #e74c3c;
+}
+
+.radio-item-card {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    margin: 5px;
+    width: 240px; 
+    min-width: 240px;
+    max-width: 240px;
+}
+
+.radio-play-btn {
+    background: transparent;
+    border: none;
+    border-radius: 12px 0 0 12px;
+    padding: 20px;
+    font-weight: bold;
+}
+
+.radio-delete-btn {
+    background: rgba(231, 76, 60, 0.1);
+    color: #e74c3c;
+    border: none;
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0 12px 12px 0;
+    padding: 10px;
+}
+
+.radio-delete-btn:hover {
+    background: rgba(231, 76, 60, 0.3);
+}
+
+.radio-play-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.glass-button {
+    min-width: 60px;
+    min-height: 60px;
+}
+
+.seed-button {
+    border-color: rgba(0, 212, 255, 0.4);
+    background: rgba(0, 212, 255, 0.05);
+}
+
+.seed-button:hover {
+    background: rgba(0, 212, 255, 0.15);
+}
+
+.radio-play-btn label {
+    text-overflow: ellipsis; /* Fügt "..." am Ende ein */
+    overflow: hidden;
+    max-width: 160px; /* Begrenzt die Breite des Textes */
+}
+
+.station-logo {
+    width: 48px;
+    height: 48px;
+    margin: 5px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    /* Falls das Bild nicht quadratisch ist, einpassen statt verzerren */
+    object-fit: contain; 
+}
+
+.radio-item-card {
+    min-width: 280px; /* Etwas breiter für das Logo */
+}
+
+.station-logo {
+    margin: 8px;
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.1); /* Platzhalterfarbe */
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.radio-play-btn {
+    text-align: left; /* Name neben dem Logo linksbündig */
+    padding-left: 10px;
+}
+
+/* Container für die gesamte Liste */
+.radio-container {
+    padding: 20px;
+}
+
+/* Die einzelne Sender-Kachel */
+.radio-item-card {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 15px;
+    padding: 15px;
+    margin: 10px;
+    /* Wir erzwingen eine feste Breite für 3 Spalten bei 800px Display */
+    width: 210px; 
+    transition: all 0.2s ease;
+}
+
+.radio-item-card:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.02);
+}
+
+/* Das Logo - jetzt deutlich größer */
+.station-logo {
+    margin-bottom: 10px;
+    border-radius: 12px;
+    background-color: #222;
+    object-fit: cover;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+}
+
+/* Der Name unter dem Logo */
+.radio-play-btn {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: white;
+}
+
+.station-logo {
+    object-fit: scale-down; /* Behält Seitenverhältnis bei und füllt den Platz */
+    background-color: #1a1a1a;
+    border-radius: 10px;
+}
