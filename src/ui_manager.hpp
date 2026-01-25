@@ -18,7 +18,7 @@ GtkWidget* create_main_ui() {
     // Buttons für den Stack-Wechsel
     GtkWidget *btn_radio = gtk_button_new_with_label("Radio");
     // Anstatt der Makro-Zeile nutzen wir eine Lambda-Funktion für maximale Flexibilität:
-    g_signal_connect(btn_radio, "clicked", G_CALLBACK(+[](GtkButton* btn, gpointer data) {
+    g_signal_connect(btn_radio, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) {
         gtk_stack_set_visible_child_name(GTK_STACK(data), "radio");
     }), stack);
     

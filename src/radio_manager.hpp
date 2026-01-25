@@ -58,6 +58,13 @@ public:
         return url; 
     }
 
+    void set_volume(double volume) {
+        // volume sollte zwischen 0.0 und 1.0 (oder bis 10.0 für Boost) liegen
+        if (pipeline) {
+            g_object_set(pipeline, "volume", volume, NULL);
+        }
+    }
+
     void set_source(const std::string& uri) {
         std::string final_uri = resolve_m3u(uri); // URL auflösen
         std::cout << "[RadioManager] Lade URI: " << final_uri << std::endl;
@@ -76,6 +83,7 @@ public:
     }
 
     static gboolean on_bus_message(GstBus *bus, GstMessage *msg, gpointer data) {
+        (void) bus; // ignore the bus paramter
         RadioManager *self = static_cast<RadioManager*>(data);
 
         switch (GST_MESSAGE_TYPE(msg)) {

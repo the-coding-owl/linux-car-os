@@ -4,47 +4,75 @@
 #include <gpiod.hpp>
 #include <gtk/gtk.h>
 #include <chrono>
-#include <thread>
-#include <vector>
+#include <iostream>
+#include <functional>
 
-inline void monitor_encoder(int pinA, int pinB, gpointer user_data) {
+using EncoderCallback = std::function<void(bool, gpointer)>;
+
+inline void monitor_encoder(int pinA, int pinB, EncoderCallback callback, gpointer user_data) {
     try {
-        // Chip öffnen
-        gpiod::chip chip("/dev/gpiochip0");
+        // 1. Einstellungen für die Leitungen festlegen
+        gpiod::line_settings settings_a;
+        settings_a.set_direction(gpiod::line::direction::INPUT);
+        settings_a.set_edge_detection(gpiod::line::edge::RISING);
+        // Optional: Debounce hinzufügen für mechanische Encoder
+        settings_a.set_debounce_period(std::chrono::milliseconds(5));
 
-        // 1. Line Einstellungen (v2)
-        gpiod::line_settings settings;
-        settings.set_direction(gpiod::line::direction::INPUT);
-        settings.set_edge_detection(gpiod::line::edge::BOTH);
+        gpiod::line_settings settings_b;
+        settings_b.set_direction(gpiod::line::direction::INPUT);
 
-        // 2. Line Konfiguration (Offsets explizit casten)
+        // 2. Line Config erstellen
         gpiod::line_config line_cfg;
-        std::vector<gpiod::line::offset> offsets = {
-            static_cast<gpiod::line::offset>(pinA), 
-            static_cast<gpiod::line::offset>(pinB)
-        };
-        line_cfg.add_line_settings(offsets, settings);
+        line_cfg.add_line_settings(static_cast<unsigned int>(pinA), settings_a);
+        line_cfg.add_line_settings(static_cast<unsigned int>(pinB), settings_b);
 
-        // 3. Request Konfiguration
+        // 3. Request Config erstellen
         gpiod::request_config req_cfg;
         req_cfg.set_consumer("CarOS_Encoder");
 
-        // 4. Der Request-Aufruf (Builder-Style für Arch Linux / libgpiod v2)
-        // Wir nutzen den Chip, um die konfigurierten Lines zu binden
-        auto request = chip.prepare_config()
-                           .set_request_config(req_cfg)
-                           .set_line_config(line_cfg)
-                           .request_lines();
+        // 4. Chip öffnen und Request direkt absetzen
+        // Bei libgpiod v2.x ist dies der sauberste Weg:
+        auto request = gpiod::chip("/dev/gpiochip0").prepare_request()
+                        .set_request_config(req_cfg)
+                        .set_line_config(line_cfg)
+                        .do_request();
+
+        // Buffer für Events vorab allozieren (Performance)
+        gpiod::edge_event_buffer buffer(16);
 
         while (true) {
-            // Prüfung auf Events
+            // Warten auf Events
             if (request.wait_edge_events(std::chrono::milliseconds(100))) {
-                auto events = request.read_edge_events();
-                // Hier Logik für Drehknopf implementieren
+                // Events in den Buffer lesen
+                request.read_edge_events(buffer);
+                
+                for (const auto& event : buffer) {
+                    if (event.line_offset() == static_cast<unsigned int>(pinA)) {
+                        // Richtung prüfen über Pin B
+                        auto val_b = request.get_value(static_cast<unsigned int>(pinB));
+                        
+                        bool clockwise = (val_b == gpiod::line::value::ACTIVE);
+                        
+                        // Callback in den GTK Main-Loop schieben (Thread-Safety!)
+                        struct CallbackWrapper {
+                            EncoderCallback cb;
+                            bool cw;
+                            gpointer data;
+                        };
+                        auto* wrapper = new CallbackWrapper{callback, clockwise, user_data};
+                        
+                        g_idle_add([](gpointer d) -> gboolean {
+                            auto* w = static_cast<CallbackWrapper*>(d);
+                            w->cb(w->cw, w->data);
+                            delete w;
+                            return FALSE;
+                        }, wrapper);
+                    }
+                }
             }
         }
     } catch (const std::exception& e) {
-        g_printerr("GPIO Fehler: %s\n", e.what());
+        std::cerr << "GPIO Fehler: " << e.what() << std::endl;
     }
 }
 

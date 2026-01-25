@@ -48,7 +48,7 @@ public:
             G_DBUS_CALL_FLAGS_NONE,
             -1,
             nullptr,
-            [](GObject* source, GAsyncResult* res, gpointer user_data) {
+            [](GObject* source, GAsyncResult* res, gpointer) {
                 GError *local_error = nullptr;
                 // WICHTIG: Ergebnis abholen, sonst bleibt der Call im Speicher hängen
                 GVariant *result = g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), res, &local_error);
@@ -94,7 +94,7 @@ public:
         g_dbus_connection_call(
             connection, "org.bluez", device_path.c_str(), "org.bluez.Device1",
             "Pair", nullptr, nullptr, G_DBUS_CALL_FLAGS_NONE, -1, nullptr,
-            [](GObject* source, GAsyncResult* res, gpointer user_data) {
+            [](GObject* source, GAsyncResult* res, gpointer) {
                 GError *err = nullptr;
                 g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), res, &err);
                 if (err) {

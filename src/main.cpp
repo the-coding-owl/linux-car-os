@@ -11,6 +11,9 @@
 #include "ui_manager.hpp"
 #include "bluetooth_manager.hpp"
 #include "radio_manager.hpp"
+#include "gpio_handler.hpp"
+#include "virtual_keyboard.hpp"
+#include "gps_handler.hpp"
 
 // Prototypen
 void refresh_radio_list(GtkWidget *flowbox, RadioManager *radio_mgr);
@@ -26,7 +29,11 @@ struct RadioStation {
 struct AppWidgets {
     GtkWidget *stack;
     GtkWidget *volume_label;
+    RadioManager *radio_mgr;
+    GPSManager *gps_mgr;
     int current_volume = 50;
+    GtkWidget *keyboard_revealer;
+    VirtualKeyboard *keyboard;
 };
 
 struct SaveData {
@@ -35,6 +42,7 @@ struct SaveData {
     GtkWidget *flowbox;
     RadioManager *radio_mgr;
     GtkPopover *popover;
+    AppWidgets* widgets;
 };
 
 // Callback für CURL
@@ -109,6 +117,19 @@ GtkWidget* create_icon_button(const char* icon_name, const char* label_text) {
     return btn;
 }
 
+GtkWidget* create_nav_button(const char* icon_path) {
+    GtkWidget *btn = gtk_button_new();
+    // Bild aus Datei laden (deine neuen monochromen Icons)
+    GtkWidget *icon = gtk_image_new_from_file(icon_path);
+    
+    // Icon-Größe festlegen (z.B. 32px für eine flache Leiste)
+    gtk_image_set_pixel_size(GTK_IMAGE(icon), 32);
+    
+    gtk_button_set_child(GTK_BUTTON(btn), icon);
+    gtk_widget_add_css_class(btn, "nav-button");
+    return btn;
+}
+
 // --- Hauptfunktionen ---
 
 void refresh_radio_list(GtkWidget *flowbox, RadioManager *radio_mgr) {
@@ -157,7 +178,7 @@ void refresh_radio_list(GtkWidget *flowbox, RadioManager *radio_mgr) {
         
         struct DelData { std::string name; GtkWidget* fb; RadioManager* rm; };
         DelData* dd = new DelData{s.name, flowbox, radio_mgr};
-        g_signal_connect(del_btn, "clicked", G_CALLBACK(+[](GtkWidget* b, gpointer data) {
+        g_signal_connect(del_btn, "clicked", G_CALLBACK(+[](GtkWidget*, gpointer data) {
             auto* d = static_cast<DelData*>(data);
             delete_station(d->name);
             refresh_radio_list(d->fb, d->rm);
@@ -258,8 +279,56 @@ void perform_seeding(GtkWidget *flowbox, RadioManager *radio_mgr) {
 }
 
 // --- UI Erstellung ---
+GtkWidget* create_navigation_page(GPSManager *gps_mgr) {
+    GtkWidget *nav_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 30);
+    gtk_widget_set_valign(nav_box, GTK_ALIGN_CENTER);
+    gtk_widget_set_halign(nav_box, GTK_ALIGN_CENTER);
+    gtk_widget_add_css_class(nav_box, "navigation-container");
 
-GtkWidget* create_radio_page(RadioManager **mgr_out) {
+    // Icon für Navigation
+    GtkWidget *nav_icon = gtk_image_new_from_file("assets/icons/navigation.png");
+    gtk_image_set_pixel_size(GTK_IMAGE(nav_icon), 80);
+    gtk_box_append(GTK_BOX(nav_box), nav_icon);
+
+    GtkWidget *status_label = gtk_label_new("Warte auf GPS Fix...");
+    gtk_widget_add_css_class(status_label, "radio-metadata"); // Nutzen wir vorhandenen Style
+    gtk_box_append(GTK_BOX(nav_box), status_label);
+
+    GtkWidget *detail_label = gtk_label_new("Verbinde mit NEO-6M...");
+    gtk_box_append(GTK_BOX(nav_box), detail_label);
+
+    // Timer zum UI-Update der GPS-Daten (1Hz)
+    g_timeout_add_seconds(1, [](gpointer data) -> gboolean {
+        auto* labels = static_cast<GtkWidget**>(data);
+        GtkLabel* l_status = GTK_LABEL(labels[0]);
+        GtkLabel* l_detail = GTK_LABEL(labels[1]);
+        GPSManager* mgr = static_cast<GPSManager*>(g_object_get_data(G_OBJECT(l_status), "mgr"));
+
+        GPSData d = mgr->get_latest_data();
+        if (d.fix) {
+            char buf_status[64];
+            snprintf(buf_status, sizeof(buf_status), "%.1f km/h", d.speed);
+            gtk_label_set_text(l_status, buf_status);
+
+            char buf_detail[128];
+            snprintf(buf_detail, sizeof(buf_detail), 
+                     "Lat: %.5f | Lon: %.5f\nSats: %d", 
+                     d.latitude, d.longitude, d.satellites);
+            gtk_label_set_text(l_detail, buf_detail);
+        } else {
+            gtk_label_set_text(l_status, "Kein GPS Fix");
+            gtk_label_set_text(l_detail, "Suche Satelliten...");
+        }
+        return G_SOURCE_CONTINUE;
+    }, new GtkWidget*[2]{status_label, detail_label});
+
+    // Manager an Widget binden für Zugriff im Timer
+    g_object_set_data(G_OBJECT(status_label), "mgr", gps_mgr);
+
+    return nav_box;
+}
+
+GtkWidget* create_radio_page(RadioManager **mgr_out, AppWidgets* widgets) {
     GtkWidget *radio_scroll = gtk_scrolled_window_new();
     gtk_widget_set_vexpand(radio_scroll, TRUE);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(radio_scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
@@ -287,9 +356,26 @@ GtkWidget* create_radio_page(RadioManager **mgr_out) {
     GtkWidget *popover = gtk_popover_new();
     GtkWidget *form = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
     GtkWidget *e_name = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(e_name), "Sendername");
     GtkWidget *e_url = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(e_url), "Stream URL");
     GtkWidget *s_btn = gtk_button_new_with_label("Speichern");
+
+    // Helper: Wenn Entry Fokus erhält, Tastatur-Ziel setzen
+    auto connect_kb = [&](GtkWidget* entry) {
+        GtkEventController *c = gtk_event_controller_focus_new();
+        g_signal_connect(c, "enter", G_CALLBACK(+[](GtkEventControllerFocus* ctrl, gpointer data){
+            AppWidgets* w = static_cast<AppWidgets*>(data);
+            w->keyboard->set_target(GTK_EDITABLE(gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(ctrl))));
+            gtk_revealer_set_reveal_child(GTK_REVEALER(w->keyboard_revealer), TRUE);
+        }), widgets);
+        gtk_widget_add_controller(entry, c);
+    };
+    connect_kb(e_name);
+    connect_kb(e_url);
+    
     gtk_box_append(GTK_BOX(form), e_name); gtk_box_append(GTK_BOX(form), e_url); gtk_box_append(GTK_BOX(form), s_btn);
+    
     gtk_popover_set_child(GTK_POPOVER(popover), form);
     gtk_widget_set_parent(popover, add_btn);
 
@@ -301,19 +387,20 @@ GtkWidget* create_radio_page(RadioManager **mgr_out) {
     gtk_flow_box_set_row_spacing(GTK_FLOW_BOX(flowbox), 20);    // Abstand zwischen Zeilen
     gtk_widget_set_valign(flowbox, GTK_ALIGN_START);
 
-    SaveData *sd = new SaveData{GTK_ENTRY(e_name), GTK_ENTRY(e_url), flowbox, *mgr_out, GTK_POPOVER(popover)};
-    g_signal_connect(s_btn, "clicked", G_CALLBACK(+[](GtkWidget* b, gpointer data) {
+    SaveData *sd = new SaveData{GTK_ENTRY(e_name), GTK_ENTRY(e_url), flowbox, *mgr_out, GTK_POPOVER(popover), widgets};
+    g_signal_connect(s_btn, "clicked", G_CALLBACK(+[](GtkWidget*, gpointer data) {
         auto* d = static_cast<SaveData*>(data);
         save_station(gtk_editable_get_text(GTK_EDITABLE(d->name_entry)), gtk_editable_get_text(GTK_EDITABLE(d->url_entry)));
         refresh_radio_list(d->flowbox, d->radio_mgr);
+        gtk_revealer_set_reveal_child(GTK_REVEALER(d->widgets->keyboard_revealer), FALSE);
         gtk_popover_popdown(d->popover);
     }), sd);
 
-    g_signal_connect(add_btn, "clicked", G_CALLBACK(+[](GtkWidget* b, gpointer p) { gtk_popover_popup(GTK_POPOVER(p)); }), popover);
+    g_signal_connect(add_btn, "clicked", G_CALLBACK(+[](GtkWidget*, gpointer p) { gtk_popover_popup(GTK_POPOVER(p)); }), popover);
 
     struct SeedData { GtkWidget* fb; RadioManager* rm; };
     SeedData* sc = new SeedData{flowbox, *mgr_out};
-    g_signal_connect(seed_btn, "clicked", G_CALLBACK(+[](GtkWidget* b, gpointer data) {
+    g_signal_connect(seed_btn, "clicked", G_CALLBACK(+[](GtkWidget*, gpointer data) {
         auto* d = static_cast<SeedData*>(data);
         perform_seeding(d->fb, d->rm); 
     }), sc);
@@ -335,16 +422,40 @@ GtkWidget* create_bluetooth_page() {
     gtk_widget_add_css_class(bt_list, "bt-list");
     static BluetoothManager *bt_mgr = new BluetoothManager(GTK_LIST_BOX(bt_list));
     GtkWidget *scan_btn = gtk_button_new_with_label("Nach Geräten suchen");
-    g_signal_connect(scan_btn, "clicked", G_CALLBACK(+[](GtkButton* b, gpointer d) { static_cast<BluetoothManager*>(d)->start_discovery(); }), bt_mgr);
+    g_signal_connect(scan_btn, "clicked", G_CALLBACK(+[](GtkButton*, gpointer d) { static_cast<BluetoothManager*>(d)->start_discovery(); }), bt_mgr);
     gtk_box_append(GTK_BOX(bt_box), bt_list);
     gtk_box_append(GTK_BOX(bt_box), scan_btn);
     return bt_box;
 }
 
-static void activate(GtkApplication *app, gpointer user_data) {
+// GPIO Callback Wrapper
+void on_encoder_event(bool clockwise, gpointer data) {
+    // @TODO: Implement real volume setting
+    (void) clockwise;
+    AppWidgets *w = static_cast<AppWidgets*>(data);
+    
+    // UI Updates müssen im Main-Thread passieren
+    g_idle_add((GSourceFunc)+[](gpointer user_data) -> gboolean {
+        AppWidgets *widgets = static_cast<AppWidgets*>(user_data);
+        // Logik: Lautstärke ändern (simuliert: immer lauter/leiser toggeln oder einfach inkrementieren)
+        // Hier vereinfacht: Jeder Klick erhöht Lautstärke, bei 100 Reset auf 0 (Demo)
+        widgets->current_volume = (widgets->current_volume + 5) % 105;
+        
+        if (widgets->radio_mgr) {
+            widgets->radio_mgr->set_volume(widgets->current_volume / 100.0);
+        }
+        return FALSE;
+    }, w);
+}
+
+static void activate(GtkApplication *app, gpointer) {
     AppWidgets *widgets = new AppWidgets();
+
+    widgets->gps_mgr = new GPSManager();
+    widgets->gps_mgr->start();
+    
     GtkWidget *window = gtk_application_window_new(app);
-    gtk_window_set_default_size(GTK_WINDOW(window), 800, 480);
+    gtk_window_set_default_size(GTK_WINDOW(window), 1024, 600);
     gtk_window_set_decorated(GTK_WINDOW(window), FALSE);
 
     GtkCssProvider *provider = gtk_css_provider_new();
@@ -369,33 +480,65 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_box_append(GTK_BOX(top_bar), close_btn);
     gtk_box_append(GTK_BOX(main_box), top_bar);
 
+    // --- Overlay für die Tastatur ---
+    GtkWidget *overlay = gtk_overlay_new();
+    gtk_widget_set_vexpand(overlay, TRUE);
+
+    // Tastatur und Revealer erstellen
+    widgets->keyboard = new VirtualKeyboard();
+    widgets->keyboard_revealer = gtk_revealer_new();
+    gtk_revealer_set_transition_type(GTK_REVEALER(widgets->keyboard_revealer), GTK_REVEALER_TRANSITION_TYPE_SLIDE_UP);
+    gtk_revealer_set_transition_duration(GTK_REVEALER(widgets->keyboard_revealer), 300); // Schnelle Animation
+    gtk_revealer_set_child(GTK_REVEALER(widgets->keyboard_revealer), widgets->keyboard->get_widget());
+    
+    // Callback zum Verstecken der Tastatur setzen
+    widgets->keyboard->set_hide_callback([w = widgets]() {
+        gtk_revealer_set_reveal_child(GTK_REVEALER(w->keyboard_revealer), FALSE);
+    });
+
     widgets->stack = gtk_stack_new();
     gtk_stack_set_transition_type(GTK_STACK(widgets->stack), GTK_STACK_TRANSITION_TYPE_SLIDE_LEFT_RIGHT);
-    gtk_widget_set_vexpand(widgets->stack, TRUE);
     
+    // Stack als Haupt-Kind des Overlays, Tastatur als Overlay-Element
+    gtk_overlay_set_child(GTK_OVERLAY(overlay), widgets->stack);
+    gtk_overlay_add_overlay(GTK_OVERLAY(overlay), widgets->keyboard_revealer);
+    gtk_widget_set_valign(widgets->keyboard_revealer, GTK_ALIGN_END); // Unten ausrichten
+
     RadioManager *radio_mgr = nullptr;
-    gtk_stack_add_titled(GTK_STACK(widgets->stack), create_radio_page(&radio_mgr), "radio", "Radio");
+    gtk_stack_add_titled(GTK_STACK(widgets->stack), create_radio_page(&radio_mgr, widgets), "radio", "Radio");
+    widgets->radio_mgr = radio_mgr; // Manager im Struct speichern für Zugriff via GPIO
     gtk_stack_add_titled(GTK_STACK(widgets->stack), create_bluetooth_page(), "bt", "Bluetooth");
 
     GtkWidget *nav_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_widget_add_css_class(nav_bar, "bottom-bar");
-    const char* icons[] = {"audio-x-generic", "multimedia-player", "applications-navigation", "bluetooth"};
-    const char* ids[] = {"radio", "media", "navi", "bt"};
-    const char* lbls[] = {"Radio", "Media", "Navi", "BT"};
 
-    for (int i=0; i<4; i++) {
-        GtkWidget *btn = create_icon_button(icons[i], lbls[i]);
+    const char* icon_paths[] = {
+        "assets/icons/radio.png", 
+        "assets/icons/media.png", 
+        "assets/icons/navigation.png", 
+        "assets/icons/bluetooth.png"
+    };
+    const char* ids[] = {"radio", "media", "navi", "bt"};
+
+    for (int i = 0; i < 4; i++) {
+        GtkWidget *btn = create_nav_button(icon_paths[i]);
         gtk_widget_set_hexpand(btn, TRUE);
+        
         g_object_set_data_full(G_OBJECT(btn), "sid", g_strdup(ids[i]), g_free);
         g_signal_connect(btn, "clicked", G_CALLBACK(+[](GtkWidget* b, gpointer s) {
             gtk_stack_set_visible_child_name(GTK_STACK(s), (const char*)g_object_get_data(G_OBJECT(b), "sid"));
         }), widgets->stack);
+        
         gtk_box_append(GTK_BOX(nav_bar), btn);
     }
 
-    gtk_box_append(GTK_BOX(main_box), widgets->stack);
+    gtk_box_append(GTK_BOX(main_box), overlay);
     gtk_box_append(GTK_BOX(main_box), nav_bar);
     gtk_window_present(GTK_WINDOW(window));
+
+    // GPIO Thread starten (Pins 17 und 27 als Beispiel für Encoder A/B)
+    std::thread gpio_thread(monitor_encoder, 17, 27, on_encoder_event, widgets);
+    gpio_thread.detach();
 }
 
 int main(int argc, char **argv) {
